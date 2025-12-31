@@ -51,8 +51,8 @@ graph LR
     A -->|Spatial Counts| C{Confidence Check}
     B -->|Class Counts| C
     
-    C -->|High Confidence| Output[Final Count]
-    C -->|Low Confidence (<90%)| Review[Flag for Review]
+    C -->|"High Confidence"| Output[Final Count]
+    C -->|"Low Confidence (<90%)"| Review[Flag for Review]
 ```
 
 ### 1. Multi-Head Classifier (`grandmaster_notebook.py`)
