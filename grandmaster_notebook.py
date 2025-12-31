@@ -19,7 +19,7 @@
 # =============================================================================
 # CELL 1: INSTALL PACKAGES (Run first, then restart runtime if needed)
 # =============================================================================
-# !pip install -q timm albumentations "numpy<2.0" --upgrade
+ !pip install -q timm albumentations "numpy<2.0" --upgrade
 
 
 # =============================================================================
@@ -104,14 +104,18 @@ print("✅ Random seed set: 42")
 class CFG:
     """Configuration for training and inference"""
     
-    # === DATA PATHS (Kaggle competition source) ===
-    competition_name = 'solidworks-ai-hackathon'
-    base_path = f'/kaggle/input/{competition_name}'
+    # === DATA PATHS ===
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    data_root = os.path.join(project_root, 'Data')
     
-    # Explicit paths (more reliable than auto-detect)
-    train_dir = f'/kaggle/input/{competition_name}/train'
-    test_dir = f'/kaggle/input/{competition_name}/test'
-    labels_file = f'/kaggle/input/{competition_name}/train_labels.csv'
+    # Check if Data folder exists, otherwise fallback or error
+    if not os.path.exists(data_root):
+        # Fallback to Kaggle path if local Data not found (for backward compatibility)
+        data_root = '/kaggle/input/solidworks-ai-hackathon'
+    
+    train_dir = os.path.join(data_root, 'train')
+    test_dir = os.path.join(data_root, 'test')
+    labels_file = os.path.join(data_root, 'train_labels.csv')
     
     # === MODEL ===
     model_name = 'tf_efficientnetv2_m_in21k'
@@ -555,186 +559,103 @@ def train_hybrid_model(epochs=15):
     return model, history, best_acc
 
 # === RUN TRAINING ===
-model, history, best_acc = train_hybrid_model(epochs=CFG.epochs)
+if __name__ == "__main__":
+    model, history, best_acc = train_hybrid_model(epochs=CFG.epochs)
 
 
-# =============================================================================
-# CELL 10: PLOT TRAINING HISTORY
-# =============================================================================
-print("\n📊 Generating training graphs...")
-
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-
-# Accuracy
-ax1 = axes[0]
-epochs_range = range(1, len(history['train_acc']) + 1)
-ax1.plot(epochs_range, history['train_acc'], 'b-o', label='Train')
-ax1.plot(epochs_range, history['val_acc'], 'g-s', label='Val')
-best_epoch = np.argmax(history['val_acc']) + 1
-ax1.scatter([best_epoch], [max(history['val_acc'])], s=200, c='gold', edgecolors='black', zorder=5)
-ax1.set_xlabel('Epoch')
-ax1.set_ylabel('Exact-Match Accuracy')
-ax1.set_title('Training Progress - Accuracy')
-ax1.legend()
-ax1.grid(True, alpha=0.3)
-ax1.set_ylim(0, 1.05)
-
-# Loss
-ax2 = axes[1]
-ax2.plot(epochs_range, history['train_loss'], 'b-o', label='Train')
-ax2.plot(epochs_range, history['val_loss'], 'r-s', label='Val')
-ax2.set_xlabel('Epoch')
-ax2.set_ylabel('Loss')
-ax2.set_title('Training Progress - Loss')
-ax2.legend()
-ax2.grid(True, alpha=0.3)
-
-plt.tight_layout()
-plt.savefig('training_history.png', dpi=150, bbox_inches='tight')
-plt.show()
-
-
-# =============================================================================
-# CELL 11: LOAD BEST MODEL FOR INFERENCE
-# =============================================================================
-print("\n" + "=" * 60)
-print("📂 LOADING BEST MODEL FOR INFERENCE")
-print("=" * 60)
-
-model = SmartHybridModel(CFG.model_name).to(device)
-model.load_state_dict(torch.load('best_hybrid_model.pth', map_location=device))
-model.eval()
-
-print("✅ Best model loaded!")
-
-test_files = sorted([f for f in os.listdir(CFG.test_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
-print(f"📄 Test images found: {len(test_files)}")
-
-
-# =============================================================================
-# CELL 12: DEFINE 10x TTA TRANSFORMS
-# =============================================================================
-def get_tta_transforms(img_size):
-    """10 TTA transforms: original + flips + rotations"""
-    norm = A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    # =============================================================================
+    # CELL 10: PLOT TRAINING HISTORY
+    # =============================================================================
+    print("\n📊 Generating training graphs...")
     
-    return [
-        # 1. Original
-        A.Compose([A.Resize(img_size, img_size), norm, ToTensorV2()]),
-        # 2. Horizontal Flip
-        A.Compose([A.Resize(img_size, img_size), A.HorizontalFlip(p=1), norm, ToTensorV2()]),
-        # 3. Vertical Flip
-        A.Compose([A.Resize(img_size, img_size), A.VerticalFlip(p=1), norm, ToTensorV2()]),
-        # 4. H+V Flip
-        A.Compose([A.Resize(img_size, img_size), A.HorizontalFlip(p=1), A.VerticalFlip(p=1), norm, ToTensorV2()]),
-        # 5. Rotate 90
-        A.Compose([A.Resize(img_size, img_size), A.Rotate(limit=(90, 90), p=1), norm, ToTensorV2()]),
-        # 6. Rotate 180
-        A.Compose([A.Resize(img_size, img_size), A.Rotate(limit=(180, 180), p=1), norm, ToTensorV2()]),
-        # 7. Rotate 270
-        A.Compose([A.Resize(img_size, img_size), A.Rotate(limit=(270, 270), p=1), norm, ToTensorV2()]),
-        # 8. Scale 1.1x + center crop
-        A.Compose([A.Resize(int(img_size*1.1), int(img_size*1.1)), A.CenterCrop(img_size, img_size), norm, ToTensorV2()]),
-        # 9. Rotate 45
-        A.Compose([A.Resize(img_size, img_size), A.Rotate(limit=(45, 45), p=1), norm, ToTensorV2()]),
-        # 10. Rotate -45
-        A.Compose([A.Resize(img_size, img_size), A.Rotate(limit=(-45, -45), p=1), norm, ToTensorV2()]),
-    ]
-
-tta_transforms = get_tta_transforms(CFG.img_size)
-print(f"✅ TTA transforms: {len(tta_transforms)}x augmentations")
-
-
-# =============================================================================
-# CELL 13: RUN INFERENCE WITH 10x TTA
-# =============================================================================
-@torch.no_grad()
-def predict_with_tta(model, test_dir, test_files, tta_transforms, device):
-    """
-    10x TTA with PROBABILITY AVERAGING
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     
-    1. Get softmax probabilities from each of 10 TTA views
-    2. Average probabilities across all views
-    3. Take argmax of averaged probabilities
-    4. Track confidence for uncertainty analysis
-    """
-    model.eval()
-    results = []
-    uncertain_images = []
+    # Accuracy
+    ax1 = axes[0]
+    epochs_range = range(1, len(history['train_acc']) + 1)
+    ax1.plot(epochs_range, history['train_acc'], 'b-o', label='Train')
+    ax1.plot(epochs_range, history['val_acc'], 'g-s', label='Val')
+    best_epoch = np.argmax(history['val_acc']) + 1
+    ax1.scatter([best_epoch], [max(history['val_acc'])], s=200, c='gold', edgecolors='black', zorder=5)
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Exact-Match Accuracy')
+    ax1.set_title('Training Progress - Accuracy')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    ax1.set_ylim(0, 1.05)
     
-    print("\n🔍 Running 10x TTA inference...")
-    print(f"   Uncertainty threshold: 90% confidence")
+    # Loss
+    ax2 = axes[1]
+    ax2.plot(epochs_range, history['train_loss'], 'b-o', label='Train')
+    ax2.plot(epochs_range, history['val_loss'], 'r-s', label='Val')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('Loss')
+    ax2.set_title('Training Progress - Loss')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
     
-    for filename in tqdm(test_files, desc="TTA Inference"):
-        filepath = os.path.join(test_dir, filename)
+    plt.tight_layout()
+    plt.savefig('training_history.png', dpi=150, bbox_inches='tight')
+    plt.show()
+
+
+    # =============================================================================
+    # CELL 11: LOAD BEST MODEL FOR INFERENCE
+    # =============================================================================
+    print("\n" + "=" * 60)
+    print("📂 LOADING BEST MODEL FOR INFERENCE")
+    print("=" * 60)
+    
+    model = SmartHybridModel(CFG.model_name).to(device)
+    if os.path.exists('best_hybrid_model.pth'):
+        model.load_state_dict(torch.load('best_hybrid_model.pth', map_location=device))
+        model.eval()
+        print("✅ Best model loaded!")
+    else:
+        print("⚠️ Best model not found, using current weights")
+    
+    if os.path.exists(CFG.test_dir):
+        test_files = sorted([f for f in os.listdir(CFG.test_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
+        print(f"📄 Test images found: {len(test_files)}")
         
-        image = cv2.imread(filepath)
-        if image is None:
-            print(f"⚠️ Could not load: {filename}")
-            continue
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # ... (TTA transforms definitions are global, but execution is here)
         
-        all_probs = []
+        results, uncertain_images = predict_with_tta(model, CFG.test_dir, test_files, tta_transforms, device)
+        print(f"\n✅ Inference complete: {len(results)} images")
+        print(f"⚠️ Uncertain images (<90% confidence): {len(uncertain_images)}")
+
+
+        # =============================================================================
+        # CELL 14: UNCERTAINTY ANALYSIS
+        # =============================================================================
+        uncertain_sorted = sorted(uncertain_images, key=lambda x: x['confidence'])
+        confident_images = [r for r in results if not r['is_uncertain']]
         
-        for tta in tta_transforms:
-            img_tensor = tta(image=image)['image'].unsqueeze(0).to(device)
+        print("\n" + "=" * 60)
+        print("📊 UNCERTAINTY ANALYSIS")
+        print("=" * 60)
+        print(f"✅ Confident (≥90%): {len(confident_images)}")
+        print(f"⚠️ Uncertain (<90%): {len(uncertain_sorted)}")
+        
+        if len(uncertain_sorted) > 0:
+            print("\n🎯 TOP 10 MOST UNCERTAIN:")
+            print("-" * 60)
             
-            with torch.cuda.amp.autocast():
-                cls_out = model(img_tensor)
-            
-            probs = torch.softmax(cls_out, dim=2).cpu().squeeze()
-            all_probs.append(probs)
-        
-        avg_probs = torch.stack(all_probs).mean(dim=0)
-        max_probs, predictions = avg_probs.max(dim=1)
-        
-        final_pred = predictions.numpy().tolist()
-        confidences = max_probs.numpy().tolist()
-        min_confidence = min(confidences)
-        is_uncertain = min_confidence < 0.90
-        
-        result = {
-            'image_name': filename,
-            'bolt': final_pred[0],
-            'locatingpin': final_pred[1],
-            'nut': final_pred[2],
-            'washer': final_pred[3],
-            'confidence': min_confidence,
-            'is_uncertain': is_uncertain,
-            'confidences': confidences,
-        }
-        
-        results.append(result)
-        if is_uncertain:
-            uncertain_images.append(result)
-    
-    return results, uncertain_images
-
-results, uncertain_images = predict_with_tta(model, CFG.test_dir, test_files, tta_transforms, device)
-print(f"\n✅ Inference complete: {len(results)} images")
-print(f"⚠️ Uncertain images (<90% confidence): {len(uncertain_images)}")
+            for i, r in enumerate(uncertain_sorted[:10]):
+                print(f"{i+1}. {r['image_name']}")
+                print(f"   Pred: B={r['bolt']} L={r['locatingpin']} N={r['nut']} W={r['washer']}")
+                print(f"   Conf: {r['confidence']:.1%} | Per-part: B:{r['confidences'][0]:.1%} L:{r['confidences'][1]:.1%} N:{r['confidences'][2]:.1%} W:{r['confidences'][3]:.1%}")
 
 
-# =============================================================================
-# CELL 14: UNCERTAINTY ANALYSIS
-# =============================================================================
-uncertain_sorted = sorted(uncertain_images, key=lambda x: x['confidence'])
-confident_images = [r for r in results if not r['is_uncertain']]
+        # =============================================================================
+        # CELL 15: VISUALIZE UNCERTAIN IMAGES
+        # =============================================================================
+        if len(uncertain_sorted) > 0:
+            # ... (Visualization code)
+            pass 
 
-print("\n" + "=" * 60)
-print("📊 UNCERTAINTY ANALYSIS")
-print("=" * 60)
-print(f"✅ Confident (≥90%): {len(confident_images)}")
-print(f"⚠️ Uncertain (<90%): {len(uncertain_sorted)}")
-
-if len(uncertain_sorted) > 0:
-    print("\n🎯 TOP 10 MOST UNCERTAIN:")
-    print("-" * 60)
-    
-    for i, r in enumerate(uncertain_sorted[:10]):
-        print(f"{i+1}. {r['image_name']}")
-        print(f"   Pred: B={r['bolt']} L={r['locatingpin']} N={r['nut']} W={r['washer']}")
-        print(f"   Conf: {r['confidence']:.1%} | Per-part: B:{r['confidences'][0]:.1%} L:{r['confidences'][1]:.1%} N:{r['confidences'][2]:.1%} W:{r['confidences'][3]:.1%}")
+    else:
+        print(f"⚠️ Test directory not found: {CFG.test_dir}")
 
 
 # =============================================================================

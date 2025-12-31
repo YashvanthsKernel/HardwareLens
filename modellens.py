@@ -40,7 +40,7 @@
 # CELL 1: INSTALL PACKAGES (RUN THIS FIRST ON FRESH KAGGLE NOTEBOOK!)
 # =============================================================================
 # Uncomment and run this line FIRST before running any other cells:
- !pip install -q ultralytics timm albumentations
+# !pip install -q ultralytics timm albumentations
 
 
 # =============================================================================
@@ -134,11 +134,17 @@ class CFG:
     """Configuration for YOLO + Regression approach"""
     
     # === DATA PATHS ===
-    competition_name = 'solidworks-ai-hackathon'
-    base_path = f'/kaggle/input/{competition_name}'
-    train_dir = f'/kaggle/input/{competition_name}/train'
-    test_dir = f'/kaggle/input/{competition_name}/test'
-    labels_file = f'/kaggle/input/{competition_name}/train_labels.csv'
+    # === DATA PATHS ===
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    data_root = os.path.join(project_root, 'Data')
+    
+    # Check if Data folder exists, otherwise fallback or error
+    if not os.path.exists(data_root):
+        data_root = '/kaggle/input/solidworks-ai-hackathon'  # Fallback
+    
+    train_dir = os.path.join(data_root, 'train')
+    test_dir = os.path.join(data_root, 'test')
+    labels_file = os.path.join(data_root, 'train_labels.csv')
     
     # === YOLO SETTINGS ===
     yolo_model = 'yolov8x.pt'  # Use largest model for best accuracy
@@ -613,7 +619,8 @@ def train_hybrid_model(epochs=20):
     return model, best_acc
 
 # Train hybrid model
-hybrid_model, best_acc = train_hybrid_model(epochs=CFG.reg_epochs)
+if __name__ == "__main__":
+    hybrid_model, best_acc = train_hybrid_model(epochs=CFG.reg_epochs)
 
 
 # =============================================================================
@@ -674,7 +681,8 @@ def train_yolo_model():
     return model
 
 # Train YOLO if available
-yolo_model = train_yolo_model() if USE_YOLO_DETECTION else None
+if __name__ == "__main__":
+    yolo_model = train_yolo_model() if USE_YOLO_DETECTION else None
 
 
 # =============================================================================
@@ -697,10 +705,16 @@ if USE_YOLO_DETECTION and YOLO_AVAILABLE:
     if os.path.exists(best_yolo_path):
         yolo_model = YOLO(best_yolo_path)
         print("✅ YOLO model loaded!")
+    else:
+        yolo_model = None
 
 # Get test files
-test_files = sorted([f for f in os.listdir(CFG.test_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
-print(f"📄 Test images: {len(test_files)}")
+if os.path.exists(CFG.test_dir):
+    test_files = sorted([f for f in os.listdir(CFG.test_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
+    print(f"📄 Test images: {len(test_files)}")
+else:
+    test_files = []
+    print(f"⚠️ Test directory not found: {CFG.test_dir}")
 
 
 # =============================================================================
