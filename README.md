@@ -59,7 +59,7 @@ graph LR
 *   **Heads**: 4 Independent Dense Layers (One per part type)
 *   **Augmentation**: TTA with Flip, Rotate, and Scale
 
-### 2. Hybrid YOLO+Regression (`modrl.py`)
+### 2. Hybrid YOLO+Regression (`modellens.py`)
 *   **Detection**: YOLOv8x (Extra Large) for bounding box precision.
 *   **Regression**: Parallel SmoothL1 regression head to predict counts as continuous values.
 
@@ -73,7 +73,7 @@ graph LR
 
 ### Installation
 ```bash
-git clone https://github.com/yourusername/HardwareLens.git
+git clone https://github.com/YashvanthsKernel/HardwareLens.git
 cd HardwareLens
 pip install torch torchvision timm albumentations ultralytics
 ```
@@ -86,7 +86,7 @@ python grandmaster_notebook.py
 
 **Training the Hybrid Detector:**
 ```bash
-python modrl.py
+python modellens.py
 ```
 
 ---
